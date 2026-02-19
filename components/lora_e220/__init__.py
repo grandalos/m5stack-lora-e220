@@ -62,10 +62,10 @@ LoRaE220OnMsgAckTrigger = lora_e220_ns.class_(
 CONFIG_BLOCK_SCHEMA = cv.Schema(
     {
         cv.Optional(CONF_ADDR, default=0x0000): cv.int_range(min=0x0000, max=0xFFFF),
-        cv.Optional(CONF_REGISTER_SPED): cv.int_range(min=0x00, max=0xFF),
-        cv.Optional(CONF_REGISTER_OPTION): cv.int_range(min=0x00, max=0xFF),
+        cv.Required(CONF_REGISTER_SPED): cv.int_range(min=0x00, max=0xFF),
+        cv.Required(CONF_REGISTER_OPTION): cv.int_range(min=0x00, max=0xFF),
         cv.Optional(CONF_CH, default=0x02): cv.int_range(min=0x00, max=0xFF),
-        cv.Optional(CONF_REGISTER_FEATURES): cv.int_range(min=0x00, max=0xFF),
+        cv.Required(CONF_REGISTER_FEATURES): cv.int_range(min=0x00, max=0xFF),
         cv.Optional(CONF_CRYPT, default=0x0000): cv.int_range(min=0x0000, max=0xFFFF),
         cv.Optional(CONF_AUTO_WRITE, default=True): cv.boolean,
     }
@@ -212,14 +212,11 @@ async def to_code(config):
 
     if CONF_CONFIG in config:
         d = config[CONF_CONFIG]
-        sped = d.get(CONF_REGISTER_SPED, 0x60)
-        option = d.get(CONF_REGISTER_OPTION, 0x20)
-        reg3 = d.get(CONF_REGISTER_FEATURES, 0x03)
         cg.add(var.set_config_addr(d[CONF_ADDR]))
-        cg.add(var.set_config_sped(sped))
-        cg.add(var.set_config_option(option))
+        cg.add(var.set_config_sped(d[CONF_REGISTER_SPED]))
+        cg.add(var.set_config_option(d[CONF_REGISTER_OPTION]))
         cg.add(var.set_config_ch(d[CONF_CH]))
-        cg.add(var.set_config_reg3(reg3))
+        cg.add(var.set_config_reg3(d[CONF_REGISTER_FEATURES]))
         cg.add(var.set_config_crypt(d[CONF_CRYPT]))
         cg.add(var.set_auto_write(d[CONF_AUTO_WRITE]))
         cg.add(var.set_has_config(True))
