@@ -77,9 +77,6 @@ config:
 Notes:
 - `crypt` on E220 is write-only in practice, and read-back may return `0x0000`.
 - Verification logic handles this behavior (CRYPT mismatch is ignored when all other fields match and desired CRYPT is non-zero).
-- Backward compatibility:
-  - top-level `desired_config` still works (legacy alias of `config`).
-  - legacy keys `sped`, `option`, `reg3` still work inside `config`.
 
 ### TX options
 
