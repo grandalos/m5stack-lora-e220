@@ -43,15 +43,15 @@ class LoRaE220 : public Component, public uart::UARTDevice {
   void set_response_timeout(uint32_t ms) { response_timeout_ms_ = ms; }
   void set_config_text_sensor(text_sensor::TextSensor *s) { config_text_sensor_ = s; }
 
-  // desired config setters
-  void set_has_desired_config(bool v) { has_desired_ = v; }
+  // config setters
+  void set_has_config(bool v) { has_config_ = v; }
   void set_auto_write(bool v) { auto_write_ = v; }
-  void set_desired_addr(uint16_t addr) { desired_.addh = (addr >> 8) & 0xFF; desired_.addl = addr & 0xFF; }
-  void set_desired_sped(uint8_t v) { desired_.sped = v; }
-  void set_desired_option(uint8_t v) { desired_.opt = v; }
-  void set_desired_ch(uint8_t v) { desired_.ch = v; }
-  void set_desired_reg3(uint8_t v) { desired_.reg3 = v; }
-  void set_desired_crypt(uint16_t c) { desired_.crypth = (c >> 8) & 0xFF; desired_.cryptl = c & 0xFF; }
+  void set_config_addr(uint16_t addr) { config_.addh = (addr >> 8) & 0xFF; config_.addl = addr & 0xFF; }
+  void set_config_sped(uint8_t v) { config_.sped = v; }
+  void set_config_option(uint8_t v) { config_.opt = v; }
+  void set_config_ch(uint8_t v) { config_.ch = v; }
+  void set_config_reg3(uint8_t v) { config_.reg3 = v; }
+  void set_config_crypt(uint16_t c) { config_.crypth = (c >> 8) & 0xFF; config_.cryptl = c & 0xFF; }
   void set_tx_message(const std::string &s) { tx_message_ = s; }
   void set_send_on_boot(bool v) { send_on_boot_ = v; }
   void set_send_interval_ms(uint32_t ms) { send_interval_ms_ = ms; }
@@ -155,10 +155,10 @@ class LoRaE220 : public Component, public uart::UARTDevice {
   bool rx_discard_until_newline_{false};
   bool expect_packet_rssi_{false};
   bool publish_next_rssi_{false};
-  // desired config
-  bool has_desired_{false};
+  // configured module config
+  bool has_config_{false};
   bool auto_write_{true};
-  E220Config desired_{};
+  E220Config config_{};
   bool has_runtime_config_{false};
   E220Config runtime_{};
 
