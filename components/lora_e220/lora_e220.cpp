@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #include "esphome/core/log.h"
 
@@ -61,8 +62,16 @@ void LoRaE220::send(const std::string &msg) {
     ESP_LOGW(TAG, "send(msg) requires fixed_tx=true and target_addr/target_ch set.");
     return;
   }
-  char frame[300];
-  snprintf(frame, sizeof(frame), "MSG|%04X|%s", this->self_addr_(), msg.c_str());
+  char header[18];
+  snprintf(header, sizeof(header), "MSG|%04X|%02X|", this->self_addr_(), this->self_ch_());
+  const size_t header_len = strlen(header);
+  if (header_len + msg.size() > max_line_) {
+    ESP_LOGW(TAG, "MSG too long (%u bytes), max supported payload is %u bytes; dropping", static_cast<unsigned>(msg.size()),
+             static_cast<unsigned>(max_line_ - header_len));
+    return;
+  }
+  std::string frame(header);
+  frame += msg;
   this->send_text_(frame);
 
   awaiting_msg_ack_ = true;
@@ -152,6 +161,11 @@ void LoRaE220::handle_payload_byte_(uint8_t c) {
   }
 
   if (c == '\n') {
+    if (rx_discard_until_newline_) {
+      rx_discard_until_newline_ = false;
+      rx_line_.clear();
+      return;
+    }
     if (!rx_line_.empty()) {
       const std::string line = rx_line_;
       if (rx_log_) {
@@ -169,9 +183,14 @@ void LoRaE220::handle_payload_byte_(uint8_t c) {
     return;
 
   if (c >= 32 && c <= 126) {
+    if (rx_discard_until_newline_)
+      return;
     rx_line_.push_back(static_cast<char>(c));
-    if (rx_line_.size() > max_line_)
+    if (rx_line_.size() > max_line_) {
+      ESP_LOGW(TAG, "RX line exceeded %u bytes, discarding until newline", static_cast<unsigned>(max_line_));
       rx_line_.clear();
+      rx_discard_until_newline_ = true;
+    }
   }
 }
 
@@ -179,7 +198,7 @@ void LoRaE220::process_protocol_line_(const std::string &line) {
   const size_t p1 = line.find('|');
   const size_t p2 = (p1 == std::string::npos) ? std::string::npos : line.find('|', p1 + 1);
   const size_t p3 = (p2 == std::string::npos) ? std::string::npos : line.find('|', p2 + 1);
-  const bool rssi_enabled = has_desired_ && ((desired_.reg3 & 0x80) != 0);
+  const bool rssi_enabled = this->rssi_enabled_();
   const bool is_receiver_role = !ping_targets_.empty();  // receiver sends PING, transmitter responds with ACK
 
   if (line.rfind("PING|", 0) == 0 && p1 != std::string::npos && p2 != std::string::npos && p3 != std::string::npos) {
@@ -256,7 +275,18 @@ void LoRaE220::process_protocol_line_(const std::string &line) {
     publish_next_rssi_ = false;
 
     const std::string src_s = line.substr(p1 + 1, p2 - p1 - 1);
-    const std::string msg = line.substr(p2 + 1);
+    bool has_src_ch = false;
+    uint8_t src_ch = this->self_ch_();
+    std::string msg;
+    if (p3 != std::string::npos) {
+      const std::string ch_s = line.substr(p2 + 1, p3 - p2 - 1);
+      if (!this->parse_hex_u8_(ch_s, &src_ch))
+        return;
+      msg = line.substr(p3 + 1);
+      has_src_ch = true;
+    } else {
+      msg = line.substr(p2 + 1);
+    }
 
     uint16_t src_addr = 0;
     if (!this->parse_hex_u16_(src_s, &src_addr))
@@ -268,7 +298,11 @@ void LoRaE220::process_protocol_line_(const std::string &line) {
     }
     char ack[32];
     snprintf(ack, sizeof(ack), "MSG_ACK|%04X", this->self_addr_());
-    this->send_fixed_text_to_(src_addr, this->self_ch_(), ack);
+    this->send_fixed_text_to_(src_addr, src_ch, ack);
+    if (!has_src_ch) {
+      ESP_LOGW(TAG, "MSG from %s without source channel in payload; MSG_ACK sent on local channel 0x%02X", src.c_str(),
+               src_ch);
+    }
     ESP_LOGD(TAG, "MSG received from %s, sent MSG_ACK", src.c_str());
     return;
   }
@@ -398,6 +432,9 @@ void LoRaE220::maybe_check_msg_ack_timeout_() {
 }
 
 uint16_t LoRaE220::self_addr_() const {
+  if (has_runtime_config_) {
+    return (static_cast<uint16_t>(runtime_.addh) << 8) | runtime_.addl;
+  }
   if (has_desired_) {
     return (static_cast<uint16_t>(desired_.addh) << 8) | desired_.addl;
   }
@@ -405,10 +442,23 @@ uint16_t LoRaE220::self_addr_() const {
 }
 
 uint8_t LoRaE220::self_ch_() const {
+  if (has_runtime_config_) {
+    return runtime_.ch;
+  }
   if (has_desired_) {
     return desired_.ch;
   }
   return target_ch_;
+}
+
+bool LoRaE220::rssi_enabled_() const {
+  if (has_runtime_config_) {
+    return (runtime_.reg3 & 0x80) != 0;
+  }
+  if (has_desired_) {
+    return (desired_.reg3 & 0x80) != 0;
+  }
+  return false;
 }
 
 std::string LoRaE220::format_addr_(uint16_t addr) {
@@ -424,6 +474,16 @@ bool LoRaE220::parse_hex_u16_(const std::string &s, uint16_t *out) {
     return false;
   }
   *out = static_cast<uint16_t>(v);
+  return true;
+}
+
+bool LoRaE220::parse_hex_u8_(const std::string &s, uint8_t *out) {
+  char *end = nullptr;
+  const unsigned long v = strtoul(s.c_str(), &end, 16);
+  if (*end != '\0' || v > 0xFF) {
+    return false;
+  }
+  *out = static_cast<uint8_t>(v);
   return true;
 }
 
@@ -490,6 +550,8 @@ void LoRaE220::on_config_frame_(const uint8_t *p, size_t n) {
   current.reg3 = p[8];
   current.crypth = p[9];
   current.cryptl = p[10];
+  runtime_ = current;
+  has_runtime_config_ = true;
 
   const char *stage_name = (stage_ == Stage::WAIT_READ)       ? "READ"
                            : (stage_ == Stage::WAIT_WRITE_ECHO) ? "WRITE_ECHO"
