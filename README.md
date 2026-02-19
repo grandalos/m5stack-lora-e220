@@ -20,10 +20,7 @@ Example for a GitHub repository:
 
 ```yaml
 external_components:
-  - source:
-      type: git
-      url: https://github.com/grandalos/esphome-lora-e220
-      ref: main
+  - source: github://grandalos/m5stack-lora-e220
     components: [lora_e220]
 ```
 
