@@ -264,11 +264,6 @@ button:
     name: "Send custom MSG"
     on_press:
       - lambda: id(e220).send("HELLO WORLD");
-
-  - platform: template
-    name: "Send default MSG"
-    on_press:
-      - lambda: id(e220).send_msg();
 ```
 
 `send("...")` sends a protocol frame `MSG|<self_addr>|<payload>` and waits for `MSG_ACK`.
