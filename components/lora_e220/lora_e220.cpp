@@ -11,7 +11,7 @@ namespace lora_e220 {
 
 static const char *const TAG = "lora_e220";
 static constexpr size_t CFG_FRAME_LEN = 11;  // C1 00 08 + 8 bytes
-static constexpr uint32_t VERIFY_DELAY_MS = 1500;
+static constexpr uint32_t VERIFY_DELAY_MS = 1000;
 static constexpr uint32_t MSG_ACK_TIMEOUT_MS = 3000;
 
 void LoRaE220::setup() {
@@ -116,7 +116,7 @@ void LoRaE220::request_write_config_(const E220Config &cfg) {
   uint8_t cmd[11] = {0xC0, 0x00, 0x08, cfg.addh,  cfg.addl, cfg.sped, cfg.opt,  cfg.ch,  cfg.reg3,
                      cfg.crypth, cfg.cryptl};
 
-  ESP_LOGW(TAG, "Writing config (C0 00 08 ...) because it differs from desired.");
+  ESP_LOGW(TAG, "Writing config (C0 00 08 ...) because it differs from configured values.");
   ESP_LOGD(TAG, "Sending WRITE CONFIG: C0 00 08 ...");
 
   this->write_array(cmd, sizeof(cmd));
@@ -435,8 +435,8 @@ uint16_t LoRaE220::self_addr_() const {
   if (has_runtime_config_) {
     return (static_cast<uint16_t>(runtime_.addh) << 8) | runtime_.addl;
   }
-  if (has_desired_) {
-    return (static_cast<uint16_t>(desired_.addh) << 8) | desired_.addl;
+  if (has_config_) {
+    return (static_cast<uint16_t>(config_.addh) << 8) | config_.addl;
   }
   return 0;
 }
@@ -445,8 +445,8 @@ uint8_t LoRaE220::self_ch_() const {
   if (has_runtime_config_) {
     return runtime_.ch;
   }
-  if (has_desired_) {
-    return desired_.ch;
+  if (has_config_) {
+    return config_.ch;
   }
   return target_ch_;
 }
@@ -455,8 +455,8 @@ bool LoRaE220::rssi_enabled_() const {
   if (has_runtime_config_) {
     return (runtime_.reg3 & 0x80) != 0;
   }
-  if (has_desired_) {
-    return (desired_.reg3 & 0x80) != 0;
+  if (has_config_) {
+    return (config_.reg3 & 0x80) != 0;
   }
   return false;
 }
@@ -561,9 +561,9 @@ void LoRaE220::on_config_frame_(const uint8_t *p, size_t n) {
   this->log_and_publish_(current, stage_name);
 
   if (stage_ == Stage::WAIT_READ) {
-    if (has_desired_ && auto_write_) {
-      if (!this->config_equals_(current, desired_)) {
-        this->request_write_config_(desired_);
+    if (has_config_ && auto_write_) {
+      if (!this->config_equals_(current, config_)) {
+        this->request_write_config_(config_);
         this->verify_retries_left_ = 1;
         this->set_timeout(VERIFY_DELAY_MS, [this]() {
           this->request_read_config_();
@@ -571,7 +571,7 @@ void LoRaE220::on_config_frame_(const uint8_t *p, size_t n) {
         });
         return;
       }
-      ESP_LOGI(TAG, "Config matches desired. No write needed.");
+      ESP_LOGI(TAG, "Config matches configured values. No write needed.");
     }
     stage_ = Stage::IDLE;
     return;
@@ -583,12 +583,12 @@ void LoRaE220::on_config_frame_(const uint8_t *p, size_t n) {
   }
 
   if (stage_ == Stage::WAIT_READ_VERIFY) {
-    if (has_desired_) {
-      if (this->config_equals_(current, desired_)) {
-        ESP_LOGI(TAG, "Verify OK: module config now matches desired.");
+    if (has_config_) {
+      if (this->config_equals_(current, config_)) {
+        ESP_LOGI(TAG, "Verify OK: module config now matches configured values.");
         verify_retries_left_ = 0;
-      } else if ((desired_.crypth != 0 || desired_.cryptl != 0) &&
-                 this->config_equals_ignoring_crypt_(current, desired_) && current.crypth == 0 &&
+      } else if ((config_.crypth != 0 || config_.cryptl != 0) &&
+                 this->config_equals_ignoring_crypt_(current, config_) && current.crypth == 0 &&
                  current.cryptl == 0) {
         // E220 docs: CRYPT_H/CRYPT_L are write-only and read-back returns 0x0000.
         ESP_LOGI(TAG, "Verify OK (except CRYPT): read-back CRYPT=0x0000 is expected for E220.");
@@ -603,7 +603,7 @@ void LoRaE220::on_config_frame_(const uint8_t *p, size_t n) {
           });
           return;
         }
-        ESP_LOGE(TAG, "Verify FAILED: module config still differs from desired.");
+        ESP_LOGE(TAG, "Verify FAILED: module config still differs from configured values.");
       }
     }
     stage_ = Stage::IDLE;
