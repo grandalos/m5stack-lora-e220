@@ -29,7 +29,8 @@ CONF_ONLINE_TEXT_SENSOR = "online_text_sensor"
 CONF_RSSI_TEXT_SENSOR = "rssi_text_sensor"
 CONF_ONLINE_TARGET_TEXT_SENSORS = "online_target_text_sensors"
 
-CONF_DESIRED_CONFIG = "desired_config"
+CONF_CONFIG = "config"
+CONF_DESIRED_CONFIG = "desired_config"  # legacy alias
 CONF_ADDR = "addr"
 CONF_SPED = "sped"
 CONF_OPTION = "option"
@@ -37,6 +38,9 @@ CONF_CH = "ch"
 CONF_REG3 = "reg3"
 CONF_CRYPT = "crypt"
 CONF_AUTO_WRITE = "auto_write"
+CONF_REGISTER_SPED = "register_sped"
+CONF_REGISTER_OPTION = "register_option"
+CONF_REGISTER_FEATURES = "register_features"
 
 lora_e220_ns = cg.esphome_ns.namespace("lora_e220")
 LoRaE220 = lora_e220_ns.class_("LoRaE220", cg.Component, uart.UARTDevice)
@@ -59,15 +63,19 @@ LoRaE220OnMsgAckTrigger = lora_e220_ns.class_(
     "LoRaE220OnMsgAckTrigger", automation.Trigger.template(cg.std_string)
 )
 
-DESIRED_SCHEMA = cv.Schema(
+CONFIG_BLOCK_SCHEMA = cv.Schema(
     {
         cv.Optional(CONF_ADDR, default=0x0000): cv.int_range(min=0x0000, max=0xFFFF),
-        cv.Optional(CONF_SPED, default=0x60): cv.int_range(min=0x00, max=0xFF),
-        cv.Optional(CONF_OPTION, default=0x20): cv.int_range(min=0x00, max=0xFF),
+        cv.Optional(CONF_REGISTER_SPED): cv.int_range(min=0x00, max=0xFF),
+        cv.Optional(CONF_REGISTER_OPTION): cv.int_range(min=0x00, max=0xFF),
         cv.Optional(CONF_CH, default=0x02): cv.int_range(min=0x00, max=0xFF),
-        cv.Optional(CONF_REG3, default=0x03): cv.int_range(min=0x00, max=0xFF),
+        cv.Optional(CONF_REGISTER_FEATURES): cv.int_range(min=0x00, max=0xFF),
         cv.Optional(CONF_CRYPT, default=0x0000): cv.int_range(min=0x0000, max=0xFFFF),
         cv.Optional(CONF_AUTO_WRITE, default=True): cv.boolean,
+        # Legacy aliases for backward compatibility.
+        cv.Optional(CONF_SPED): cv.int_range(min=0x00, max=0xFF),
+        cv.Optional(CONF_OPTION): cv.int_range(min=0x00, max=0xFF),
+        cv.Optional(CONF_REG3): cv.int_range(min=0x00, max=0xFF),
     }
 )
 
@@ -93,7 +101,8 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_READ_ON_BOOT, default=True): cv.boolean,
             cv.Optional(CONF_RESPONSE_TIMEOUT, default="500ms"): cv.positive_time_period_milliseconds,
             cv.Optional(CONF_CONFIG_TEXT_SENSOR): text_sensor.text_sensor_schema(),
-            cv.Optional(CONF_DESIRED_CONFIG): DESIRED_SCHEMA,
+            cv.Optional(CONF_CONFIG): CONFIG_BLOCK_SCHEMA,
+            cv.Optional(CONF_DESIRED_CONFIG): CONFIG_BLOCK_SCHEMA,
             cv.Optional(CONF_TX_MESSAGE): cv.string,
             cv.Optional(CONF_SEND_ON_BOOT, default=False): cv.boolean,
             cv.Optional(CONF_SEND_INTERVAL, default="0s"): cv.update_interval,  # 0s = wyłącz
@@ -210,13 +219,16 @@ async def to_code(config):
             sens = await text_sensor.new_text_sensor(sens_conf)
             cg.add(var.add_online_target_text_sensor(addr, ch, sens))
 
-    if CONF_DESIRED_CONFIG in config:
-        d = config[CONF_DESIRED_CONFIG]
+    if CONF_CONFIG in config or CONF_DESIRED_CONFIG in config:
+        d = config.get(CONF_CONFIG, config.get(CONF_DESIRED_CONFIG))
+        sped = d.get(CONF_REGISTER_SPED, d.get(CONF_SPED, 0x60))
+        option = d.get(CONF_REGISTER_OPTION, d.get(CONF_OPTION, 0x20))
+        reg3 = d.get(CONF_REGISTER_FEATURES, d.get(CONF_REG3, 0x03))
         cg.add(var.set_desired_addr(d[CONF_ADDR]))
-        cg.add(var.set_desired_sped(d[CONF_SPED]))
-        cg.add(var.set_desired_option(d[CONF_OPTION]))
+        cg.add(var.set_desired_sped(sped))
+        cg.add(var.set_desired_option(option))
         cg.add(var.set_desired_ch(d[CONF_CH]))
-        cg.add(var.set_desired_reg3(d[CONF_REG3]))
+        cg.add(var.set_desired_reg3(reg3))
         cg.add(var.set_desired_crypt(d[CONF_CRYPT]))
         cg.add(var.set_auto_write(d[CONF_AUTO_WRITE]))
         cg.add(var.set_has_desired_config(True))
