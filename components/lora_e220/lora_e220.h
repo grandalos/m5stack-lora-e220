@@ -94,9 +94,11 @@ class LoRaE220 : public Component, public uart::UARTDevice {
   void send_fixed_text_to_(uint16_t addr, uint8_t ch, const std::string &s);
   void process_protocol_line_(const std::string &line);
   bool parse_hex_u16_(const std::string &s, uint16_t *out);
+  bool parse_hex_u8_(const std::string &s, uint8_t *out);
   std::string format_addr_(uint16_t addr);
   uint16_t self_addr_() const;
   uint8_t self_ch_() const;
+  bool rssi_enabled_() const;
   void publish_online_state_();
   void trigger_ping_ack_(uint16_t addr);
   void trigger_ping_timeout_(uint16_t addr);
@@ -150,12 +152,15 @@ class LoRaE220 : public Component, public uart::UARTDevice {
   bool rx_log_{true};
   std::string rx_line_{};
   const size_t max_line_{240};
+  bool rx_discard_until_newline_{false};
   bool expect_packet_rssi_{false};
   bool publish_next_rssi_{false};
   // desired config
   bool has_desired_{false};
   bool auto_write_{true};
   E220Config desired_{};
+  bool has_runtime_config_{false};
+  E220Config runtime_{};
 
   // state machine
   enum class Stage : uint8_t { IDLE, WAIT_READ, WAIT_WRITE_ECHO, WAIT_READ_VERIFY };
