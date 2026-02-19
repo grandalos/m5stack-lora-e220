@@ -8,7 +8,7 @@ Features:
 - Protocol-level frames: `PING`, `ACK`, `MSG`, `MSG_ACK`.
 - Link monitoring (heartbeat) with configurable `ping_interval` and `ack_timeout`.
 - Online state as text sensors (`"true"` / `"false"`), including per-target sensors.
-- RSSI reporting to text sensor (e.g. `-78 dBm`) when RSSI byte is enabled in `reg3`.
+- RSSI reporting to text sensor (e.g. `-78 dBm`) when RSSI byte is enabled in `register_features`.
 - ESPHome automations: `on_receive`, `on_message`, `on_ping`, `on_ping_ack`, `on_ping_timeout`, `on_msg_ack`.
 - Runtime API from lambdas: `id(e220).read_config()`, `id(e220).send("...")`, `id(e220).send_msg()`.
 
@@ -53,30 +53,33 @@ lora_e220:
 - `config_text_sensor`: publishes full config string (`ADDR/SPED/OPT/CH/REG3/CRYPT`).
 - `rx_log` (default: `true`): debug logging of received lines.
 
-### Desired module config
+### Module `config`
 
 ```yaml
-desired_config:
+config:
   addr: 0x0001
-  sped: 0x60
-  option: 0x20
+  register_sped: 0x60
+  register_option: 0x20
   ch: 0x02
-  reg3: 0xC3
+  register_features: 0xC3
   crypt: 0x0000
   auto_write: true
 ```
 
 - `addr` (0x0000..0xFFFF)
-- `sped` (0x00..0xFF)
-- `option` (0x00..0xFF)
+- `register_sped` (0x00..0xFF): raw SPED register byte (UART/parity/air-rate setup).
+- `register_option` (0x00..0xFF): raw OPTION register byte.
 - `ch` (0x00..0xFF)
-- `reg3` (0x00..0xFF)
+- `register_features` (0x00..0xFF): raw REG3 register byte (e.g. RSSI byte/fixed transmission bits).
 - `crypt` (0x0000..0xFFFF)
 - `auto_write` (default: `true`)
 
 Notes:
 - `crypt` on E220 is write-only in practice, and read-back may return `0x0000`.
 - Verification logic handles this behavior (CRYPT mismatch is ignored when all other fields match and desired CRYPT is non-zero).
+- Backward compatibility:
+  - top-level `desired_config` still works (legacy alias of `config`).
+  - legacy keys `sped`, `option`, `reg3` still work inside `config`.
 
 ### TX options
 
@@ -100,7 +103,7 @@ If `online_target_text_sensors` is omitted, sensors are auto-generated from `pin
 ### RSSI
 
 - `rssi_text_sensor`: publishes packet RSSI in dBm text.
-- Requires RSSI byte in module settings (`reg3` bit 7 set, e.g. `0xC3`).
+- Requires RSSI byte in module settings (`register_features` bit 7 set, e.g. `0xC3`).
 
 Behavior:
 - Receiver role (node with `ping_targets`): RSSI from incoming `ACK`.
@@ -159,12 +162,12 @@ lora_e220:
   ack_timeout: 1500ms
   rx_log: true
 
-  desired_config:
+  config:
     addr: 0x0002
-    sped: 0x60
-    option: 0x20
+    register_sped: 0x60
+    register_option: 0x20
     ch: 0x02
-    reg3: 0xC3
+    register_features: 0xC3
     crypt: 0x0000
     auto_write: true
 
@@ -215,12 +218,12 @@ lora_e220:
   ack_timeout: 500ms
   rx_log: true
 
-  desired_config:
+  config:
     addr: 0x0001
-    sped: 0x60
-    option: 0x20
+    register_sped: 0x60
+    register_option: 0x20
     ch: 0x02
-    reg3: 0xC3
+    register_features: 0xC3
     crypt: 0x0000
     auto_write: true
 
@@ -263,7 +266,7 @@ button:
       - lambda: id(e220).send("HELLO WORLD");
 ```
 
-`send("...")` sends a protocol frame `MSG|<self_addr>|<payload>` and waits for `MSG_ACK`.
+`send("...")` sends a protocol frame `MSG|<self_addr>|<self_ch>|<payload>` and waits for `MSG_ACK`.
 
 ## Protocol summary
 
@@ -271,7 +274,8 @@ button:
   - `PING|<seq_dec>|<src_addr_hex4>|<src_ch_hex2>`
   - `ACK|<src_addr_hex4>|<seq_dec>`
 - User message:
-  - `MSG|<src_addr_hex4>|<payload>`
+  - `MSG|<src_addr_hex4>|<src_ch_hex2>|<payload>`
+    - Legacy receive compatibility: `MSG|<src_addr_hex4>|<payload>`
   - `MSG_ACK|<src_addr_hex4>`
 
 ## Role model
@@ -287,4 +291,3 @@ button:
 ## Hardware note (M0/M1)
 
 If your board uses physical M0/M1 switches for mode selection, keep read/write config flow as-is and ensure module mode matches the command being used.
-
